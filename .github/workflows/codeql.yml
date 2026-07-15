@@ -11,7 +11,8 @@ on:
 jobs:
   analyze:
     name: Analyze (${{ matrix.language }})
-    runs-on: ${{ (matrix.language == 'swift' && 'macos-latest') || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
     permissions:
       security-events: write
       packages: read
@@ -34,8 +35,10 @@ jobs:
       with:
         languages: ${{ matrix.language }}
         build-mode: ${{ matrix.build-mode }}
+        extractor-options: cpp=ram=4096
 
     - name: Perform CodeQL Analysis
       uses: github/codeql-action/analyze@v4
       with:
         category: "/language:${{ matrix.language }}"
+        upload: false
