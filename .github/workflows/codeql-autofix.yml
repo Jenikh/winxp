@@ -1,0 +1,76 @@
+name: "CodeQL Auto-Fix"
+
+on:
+  workflow_run:
+    workflows: ["CodeQL Advanced"]
+    types:
+      - completed
+
+permissions:
+  contents: write
+
+jobs:
+  autofix:
+    if: ${{ github.event.workflow_run.conclusion == 'failure' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Download failed run logs
+        id: logs
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          RUN_ID=${{ github.event.workflow_run.id }}
+          echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
+          gh api "repos/${{ github.repository }}/actions/runs/$RUN_ID/logs" \
+            -H "Accept: application/vnd.github+json" \
+            > /tmp/logs.zip 2>/dev/null && \
+            unzip -o /tmp/logs.zip -d /tmp/logs 2>/dev/null || echo "log download failed"
+          find /tmp/logs -name "*.txt" -exec cat {} + 2>/dev/null | \
+            grep -iE "error|fail|warning|crash|timeout|killed|oom|memory|signal" | \
+            tail -300 > /tmp/errors.txt 2>/dev/null || true
+          find /tmp/logs -name "*.txt" -exec cat {} + 2>/dev/null | \
+            tail -100 >> /tmp/errors.txt 2>/dev/null || true
+          sort -u /tmp/errors.txt > /tmp/errors_clean.txt 2>/dev/null || true
+          mv /tmp/errors_clean.txt /tmp/errors.txt 2>/dev/null || true
+          cp .github/workflows/codeql.yml /tmp/current.yml
+          echo "Error log lines: $(wc -l < /tmp/errors.txt 2>/dev/null || echo 0)"
+
+      - name: Run AI analysis
+        id: ai
+        env:
+          ZEN_API_KEY: ${{ secrets.ZEN_API_KEY }}
+        run: python .github/scripts/autofix.py
+
+      - name: Validate and commit fix
+        run: |
+          if [ ! -s /tmp/fixed.yml ]; then
+            echo "No fix generated, skipping"
+            exit 0
+          fi
+          python3 -c "
+          import yaml, sys
+          with open('/tmp/fixed.yml') as f:
+              doc = yaml.safe_load(f)
+          if 'name' not in doc or 'jobs' not in doc:
+              print('Invalid workflow structure', file=sys.stderr)
+              sys.exit(1)
+          print('YAML validation passed')
+          " || { echo "YAML validation failed, not committing"; exit 0; }
+          diff -q .github/workflows/codeql.yml /tmp/fixed.yml && \
+            { echo "No changes needed"; exit 0; }
+          cp /tmp/fixed.yml .github/workflows/codeql.yml
+          git config user.name "codeql-autofix[bot]"
+          git config user.email "codeql-autofix[bot]@users.noreply.github.com"
+          git add .github/workflows/codeql.yml
+          git commit -m "Auto-fix: CodeQL workflow failure"
+          git push
+          echo "## Auto-fix applied" >> "$GITHUB_STEP_SUMMARY"
+          echo "Analyzed failure from run #${{ github.event.workflow_run.id }}" >> "$GITHUB_STEP_SUMMARY"
