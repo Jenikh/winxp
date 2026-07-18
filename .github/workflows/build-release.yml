@@ -11,23 +11,26 @@ permissions:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential cmake
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Setup Developer Command Prompt
+        uses: ilammy/msvc-dev-cmd@v1
 
       - name: Build
+        shell: bash
         run: |
           chmod +x build.sh
           ./build.sh
 
       - name: Package build
+        shell: bash
         run: |
           tar -czf winxp-build.tar.gz dist
 
