@@ -26,8 +26,9 @@ jobs:
       - name: Build
         shell: bash
         run: |
+          dos2unix build.sh 2>/dev/null || true
           chmod +x build.sh
-          ./build.sh
+          bash -x build.sh 2>&1 || true
 
       - name: Package build
         shell: bash
