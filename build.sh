@@ -36,15 +36,17 @@ build_nt_source() {
     # --- Verify we are inside a Razzle environment --------------------------
     if [[ -z "${_NTROOT:-}" ]]; then
         echo "ERROR: Not running inside a Razzle environment."
-        echo
-        echo "Please run razzle first:"
-        echo
+        echo ""
+        echo "The NT source tree is present but build.exe requires the"
+        echo "Razzle build environment. To build:"
+        echo ""
         echo "    cmd /k"
         echo "    cd $NT_SRC\\tools"
         echo "    razzle free"
-        echo "    cd /d $(cygpath -w "$ROOT_DIR" 2>/dev/null || echo "<repo-root>")"
+        echo "    cd /d $(cygpath -w "$ROOT_DIR" 2>/dev/null || echo '<repo-root>')"
         echo "    bash build.sh"
-        echo
+        echo ""
+        echo "Cannot proceed without Razzle. Exiting."
         exit 1
     fi
 
@@ -58,7 +60,7 @@ build_nt_source() {
 
     if [[ -z "$build_exe" ]]; then
         echo "ERROR: 'build.exe' not found on PATH or in $NT_SRC/tools."
-        echo
+        echo ""
         echo "Ensure the DDK/WDK is installed and razzle has been run."
         exit 1
     fi
@@ -101,22 +103,6 @@ build_nt_source() {
 }
 
 # ---------------------------------------------------------------------------
-# Stub: NT source tree exists but is empty (placeholder repo)
-# ---------------------------------------------------------------------------
-build_nt_stub() {
-    echo "=== NT source tree directory exists but is empty ==="
-    echo ""
-    echo "The directory $NT_SRC/ exists but does not contain the full"
-    echo "Windows XP source tree (dirs, tools/, public/ are missing)."
-    echo ""
-    echo "This repo is a placeholder. To build, you need the actual"
-    echo "Windows XP SP1 source tree placed in $NT_SRC/."
-    echo ""
-    mkdir -p dist
-    echo "Nothing to build." > dist/README.txt
-}
-
-# ---------------------------------------------------------------------------
 # Standard build systems (Makefile / configure / CMakeLists.txt)
 # ---------------------------------------------------------------------------
 build_standard() {
@@ -146,8 +132,6 @@ build_standard() {
 # ---------------------------------------------------------------------------
 if detect_nt_source; then
     build_nt_source
-elif [ -d "$NT_SRC" ]; then
-    build_nt_stub
 else
     build_standard
 fi
