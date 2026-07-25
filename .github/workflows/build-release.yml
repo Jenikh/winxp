@@ -32,6 +32,7 @@ jobs:
       - name: Package build
         shell: bash
         run: |
+          mkdir -p dist
           tar -czf winxp-build.tar.gz dist
 
       - name: Create Release
