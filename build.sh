@@ -5,6 +5,19 @@ ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$ROOT_DIR"
 
 # ---------------------------------------------------------------------------
+# Only run on Windows (MSYS / MinGW / Cygwin)
+# ---------------------------------------------------------------------------
+case "$(uname -s)" in
+    MINGW*|MSYS*|CYGWIN*)
+        ;;
+    *)
+        echo "Windows XP sources can only be built from Windows."
+        echo "Use MSYS2, Git Bash, or a Razzle command prompt."
+        exit 1
+        ;;
+esac
+
+# ---------------------------------------------------------------------------
 # Detect the NT source tree
 # ---------------------------------------------------------------------------
 NT_SRC="Source/XPSP1/NT"
@@ -14,13 +27,28 @@ detect_nt_source() {
 }
 
 # ---------------------------------------------------------------------------
-# NT build: set up the razzle-style environment and run build.exe / nmake
+# NT build: verify razzle environment, invoke build.exe, collect artifacts
 # ---------------------------------------------------------------------------
 build_nt_source() {
     echo "=== Detected Windows XP (NT 5.1) source tree ==="
     echo ""
 
-    # --- Locate the DDK build tool -------------------------------------------
+    # --- Verify we are inside a Razzle environment --------------------------
+    if [[ -z "${_NTROOT:-}" ]]; then
+        echo "ERROR: Not running inside a Razzle environment."
+        echo
+        echo "Please run razzle first:"
+        echo
+        echo "    cmd /k"
+        echo "    cd $NT_SRC\\tools"
+        echo "    razzle free"
+        echo "    cd /d $(cygpath -w "$ROOT_DIR" 2>/dev/null || echo "<repo-root>")"
+        echo "    bash build.sh"
+        echo
+        exit 1
+    fi
+
+    # --- Locate the DDK build tool ------------------------------------------
     local build_exe=""
     if command -v build &>/dev/null; then
         build_exe="build"
@@ -28,107 +56,48 @@ build_nt_source() {
         build_exe="$NT_SRC/tools/build.exe"
     fi
 
-    # --- Locate nmake (fallback) --------------------------------------------
-    local nmake_cmd=""
-    if command -v nmake &>/dev/null; then
-        nmake_cmd="nmake"
-    fi
-
-    if [ -z "$build_exe" ] && [ -z "$nmake_cmd" ]; then
-        echo "ERROR: Neither 'build' (DDK) nor 'nmake' found on PATH."
-        echo ""
-        echo "This source tree requires the Windows DDK/WDK build tools."
-        echo "Please install the Windows Server 2003 DDK or a compatible WDK,"
-        echo "then run this script from a razzle command window:"
-        echo ""
-        echo "  1.  Open a Command Prompt as Administrator"
-        echo "  2.  cd $NT_SRC/tools"
-        echo "  3.  razzle"
-        echo "  4.  cd <repo-root>"
-        echo "  5.  build.sh"
-        echo ""
-        echo "Alternatively, you can compile individual components manually:"
-        echo "  cd $NT_SRC/<subdir>/<component>"
-        echo "  nmake -f makefile.def"
+    if [[ -z "$build_exe" ]]; then
+        echo "ERROR: 'build.exe' not found on PATH or in $NT_SRC/tools."
+        echo
+        echo "Ensure the DDK/WDK is installed and razzle has been run."
         exit 1
     fi
 
-    # --- Set up minimal environment variables --------------------------------
-    # These mirror what razzle.cmd / setenv.bat normally provide.
-    export BASEDIR="$(pwd)/$NT_SRC"
-    export _NTDRIVE="${BASEDIR%%:*}"
-    export _NTROOT="/${BASEDIR#*:}"
-    [ -z "$_NTROOT" ] && _NTROOT="/nt"
-    export NTMAKEENV="$NT_SRC/tools"
-    export RAZZLETOOLPATH="$NT_SRC/tools"
-
-    # Tool paths used by makefile.plt / makefile.def
-    export SDK_PATH="$NT_SRC/public/sdk"
-    export SDK_INC_PATH="$SDK_PATH/inc"
-    export SDK_LIB_PATH="$SDK_PATH/lib/*"
-    export DDK_PATH="$NT_SRC/public/ddk"
-    export DDK_INC_PATH="$DDK_PATH/inc"
-    export DDK_LIB_PATH="$DDK_PATH/lib/*"
-    export OAK_INC_PATH="$NT_SRC/public/oak/inc"
-    export CRT_INC_PATH="$SDK_INC_PATH/crt"
-    export CRT_LIB_PATH="$SDK_LIB_PATH"
-    export WDM_INC_PATH="$DDK_INC_PATH/wdm"
-    export PUBLIC_INTERNAL_PATH="$NT_SRC/public/internal"
-    export WPP_CONFIG_PATH="$NT_SRC/tools/WppConfig"
-
-    # Default target: i386 free build
-    export 386=1
-    export AMD64=0
-    export IA64=0
-    export FREEBUILD=1
-    export NTDEBUG="ntsdnodbg"
-    export BUILD_TYPE="fre"
-    export TARGET_DIRECTORY="i386"
-    export _OBJ_DIR="obj"
-
-    # Add DDK and SDK bin directories to PATH
-    local ddk_bin="$NT_SRC/public/oak/binr"
-    [ -d "$ddk_bin" ] && export PATH="$ddk_bin:$PATH"
-    local sdk_bin="$NT_SRC/public/sdk/bin"
-    [ -d "$sdk_bin" ] && export PATH="$sdk_bin:$PATH"
-
-    echo "Environment:"
-    echo "  BASEDIR      = $BASEDIR"
-    echo "  NTMAKEENV    = $NTMAKEENV"
-    echo "  TARGET       = i386 (free)"
-    echo "  SDK_INC_PATH = $SDK_INC_PATH"
-    echo "  DDK_INC_PATH = $DDK_INC_PATH"
+    echo "Using build tool: $build_exe"
+    echo "  _NTROOT  = ${_NTROOT}"
+    echo "  _NTDRIVE = ${_NTDRIVE:-<auto>}"
     echo ""
 
     mkdir -p build
     mkdir -p dist
 
-    # --- Try build.exe first, then fall back to nmake -----------------------
-    if [ -n "$build_exe" ]; then
-        echo "=== Running DDK build ==="
-        cd "$NT_SRC"
-        $build_exe -cZ -w -j . 2>&1 | tee "$ROOT_DIR/build.log" || true
-        cd "$ROOT_DIR"
-    else
-        echo "=== Running nmake on makefile.def ==="
-        cd "$NT_SRC"
-        $nmake_cmd -f makefile.def 2>&1 | tee "$ROOT_DIR/build.log" || true
-        cd "$ROOT_DIR"
-    fi
+    # --- Run the build ------------------------------------------------------
+    echo "=== Running DDK build ==="
+    cd "$NT_SRC"
+    "$build_exe" -cZ 2>&1 | tee "$ROOT_DIR/build.log" || true
+    cd "$ROOT_DIR"
 
     echo ""
     echo "=== Build log saved to build.log ==="
 
-    # --- Collect output into dist/ -------------------------------------------
+    # --- Collect build artifacts into dist/ ----------------------------------
     echo "=== Collecting build artifacts ==="
-    # The NT build places output under obj/i386/ directories scattered
-    # throughout the source tree. Gather them.
-    find "$NT_SRC" -type f \( -name "*.exe" -o -name "*.dll" -o -name "*.sys" -o -name "*.lib" \) \
-        -not -path "*/tools/*" 2>/dev/null | head -200 > dist/manifest.txt || true
+
+    find "$NT_SRC" \
+        -type f \
+        \( \
+            -name "*.exe" -o \
+            -name "*.dll" -o \
+            -name "*.sys" -o \
+            -name "*.lib" \
+        \) \
+        -not -path "*/tools/*" \
+        -exec cp "{}" dist/ \; \
+        2>/dev/null || true
 
     local count
-    count=$(wc -l < dist/manifest.txt 2>/dev/null || echo 0)
-    echo "Found $count build artifact(s). See dist/manifest.txt"
+    count=$(find dist -maxdepth 1 -type f 2>/dev/null | wc -l)
+    echo "Copied $count build artifact(s) into dist/"
 }
 
 # ---------------------------------------------------------------------------
