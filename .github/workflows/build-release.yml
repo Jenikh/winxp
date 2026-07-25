@@ -23,9 +23,24 @@ jobs:
       - name: Setup Developer Command Prompt
         uses: ilammy/msvc-dev-cmd@v1
 
+      - name: Download WinDDK 2003 build tools
+        shell: bash
+        run: |
+          mkdir -p ddk-tools
+          cd ddk-tools
+          git init
+          git remote add origin https://github.com/9176324/WinDDK.git
+          git config core.sparseCheckout true
+          echo "3790.1830/bin/x86/*" >> .git/info/sparse-checkout
+          echo "3790.1830/bin/makefile.def" >> .git/info/sparse-checkout
+          echo "3790.1830/bin/makefile.plt" >> .git/info/sparse-checkout
+          git fetch --depth=1 origin
+          git checkout FETCH_HEAD
+
       - name: Build
         shell: bash
         run: |
+          export PATH="$PWD/ddk-tools/3790.1830/bin/x86:$PATH"
           chmod +x build.sh
           ./build.sh
 
