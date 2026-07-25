@@ -27,47 +27,95 @@ detect_nt_source() {
 }
 
 # ---------------------------------------------------------------------------
-# NT build: verify razzle environment, invoke build.exe, collect artifacts
+# NT build: set up razzle-style environment and invoke build.exe
 # ---------------------------------------------------------------------------
 build_nt_source() {
     echo "=== Detected Windows XP (NT 5.1) source tree ==="
     echo ""
 
-    # --- Verify we are inside a Razzle environment --------------------------
+    # --- If not already in a Razzle env, set up a minimal one ---------------
     if [[ -z "${_NTROOT:-}" ]]; then
-        echo "ERROR: Not running inside a Razzle environment."
+        echo "No Razzle environment detected — setting up minimal NT build env"
         echo ""
-        echo "The NT source tree is present but build.exe requires the"
-        echo "Razzle build environment. To build:"
+
+        local NT_ABS
+        NT_ABS="$(cd "$NT_SRC" && pwd -W 2>/dev/null || pwd)"
+
+        export _NTDRIVE="${NT_ABS%%/*}"
+        export _NTROOT="${NT_ABS#$_NTDRIVE}"
+        export _NTDRIVE="${_NTDRIVE}/"
+
+        export NTMAKEENV="$NT_ABS/tools"
+        export RAZZLETOOLPATH="$NT_ABS/tools"
+
+        export BASEDIR="$NT_ABS"
+        export _NTOBJDIR="obj"
+        export _NTLIBDIR="lib"
+
+        # SDK / DDK paths
+        export SDK_PATH="$NT_ABS/public/sdk"
+        export SDK_INC_PATH="$SDK_PATH/inc"
+        export SDK_LIB_PATH="$SDK_PATH/lib"
+        export DDK_PATH="$NT_ABS/public/ddk"
+        export DDK_INC_PATH="$DDK_PATH/inc"
+        export DDK_LIB_PATH="$DDK_PATH/lib"
+        export OAK_PATH="$NT_ABS/public/oak"
+        export OAK_INC_PATH="$OAK_PATH/inc"
+        export CRT_INC_PATH="$SDK_INC_PATH/crt"
+        export CRT_LIB_PATH="$SDK_LIB_PATH"
+        export WDM_INC_PATH="$DDK_PATH/inc/wdm"
+        export PUBLIC_INTERNAL_PATH="$NT_ABS/public/internal"
+        export WPP_CONFIG_PATH="$NT_ABS/tools/WppConfig"
+
+        # Target architecture: i386 free build
+        export PROCESSOR_ARCHITECTURE=x86
+        export _BUILDARCH=x86
+        export BUILD_TYPE=fre
+        export FREEBUILD=1
+        export NTDEBUG=ntsdnodbg
+        export BUILD_ALT_DIR=""
+
+        # Makefile build output directories
+        export _OBJ_DIR=obj
+        export TARGET_DIRECTORY=i386
+
+        # Add DDK / SDK / tools bin to PATH
+        local ddk_bin="$OAK_PATH/binr"
+        [ -d "$ddk_bin" ] && export PATH="$ddk_bin:$PATH"
+        local sdk_bin="$SDK_PATH/bin"
+        [ -d "$sdk_bin" ] && export PATH="$sdk_bin:$PATH"
+        [ -d "$NT_ABS/tools" ] && export PATH="$NT_ABS/tools:$PATH"
+
+        echo "  _NTROOT      = $_NTROOT"
+        echo "  _NTDRIVE     = $_NTDRIVE"
+        echo "  NTMAKEENV    = $NTMAKEENV"
+        echo "  TARGET       = i386 free"
+        echo "  SDK_INC_PATH = $SDK_INC_PATH"
+        echo "  DDK_INC_PATH = $DDK_INC_PATH"
         echo ""
-        echo "    cmd /k"
-        echo "    cd $NT_SRC\\tools"
-        echo "    razzle free"
-        echo "    cd /d $(cygpath -w "$ROOT_DIR" 2>/dev/null || echo '<repo-root>')"
-        echo "    bash build.sh"
+    else
+        echo "Using existing Razzle environment"
+        echo "  _NTROOT  = $_NTROOT"
+        echo "  _NTDRIVE = ${_NTDRIVE:-<auto>}"
         echo ""
-        echo "Cannot proceed without Razzle. Exiting."
-        exit 1
     fi
 
-    # --- Locate the DDK build tool ------------------------------------------
+    # --- Locate build.exe ---------------------------------------------------
     local build_exe=""
     if command -v build &>/dev/null; then
         build_exe="build"
+    elif [ -f "$NTMAKEENV/build.exe" ]; then
+        build_exe="$NTMAKEENV/build.exe"
     elif [ -f "$NT_SRC/tools/build.exe" ]; then
         build_exe="$NT_SRC/tools/build.exe"
     fi
 
     if [[ -z "$build_exe" ]]; then
         echo "ERROR: 'build.exe' not found on PATH or in $NT_SRC/tools."
-        echo ""
-        echo "Ensure the DDK/WDK is installed and razzle has been run."
         exit 1
     fi
 
-    echo "Using build tool: $build_exe"
-    echo "  _NTROOT  = ${_NTROOT}"
-    echo "  _NTDRIVE = ${_NTDRIVE:-<auto>}"
+    echo "Build tool: $build_exe"
     echo ""
 
     mkdir -p build
