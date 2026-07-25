@@ -67,13 +67,33 @@ build_nt_source() {
         export PUBLIC_INTERNAL_PATH="$NT_ABS/public/internal"
         export WPP_CONFIG_PATH="$NT_ABS/tools/WppConfig"
 
-        # Target architecture: i386 free build
+        # Target architecture: i386 free build (matches buildx.cmd "retail" mode)
         export PROCESSOR_ARCHITECTURE=x86
+        export _BuildArch=x86
         export _BUILDARCH=x86
         export BUILD_TYPE=fre
+        export _BuildType=fre
         export FREEBUILD=1
         export NTDEBUG=ntsdnodbg
+        export NTDEBUGTYPE=windbg
         export BUILD_ALT_DIR=""
+
+        # Critical: 386=1 must be set for x86 builds (buildx.cmd sets this)
+        export 386=1
+
+        # Build defaults from buildx.cmd
+        export BUILD_DEFAULT_TARGETS=-x86
+        export BUILD_DEFAULT="daytona -e -E -w -nmake -i"
+        export NTBBT=1
+        export NO_MAPSYM=1
+        export BINPLACE_FLAGS=-xa
+
+        # Output directories (buildx.cmd sets these)
+        local drive_letter="${NT_ABS%%:*}"
+        export _NTTREE="${drive_letter}:\\binaries.x86fre"
+        export _NTPOSTBLD="$_NTTREE"
+        export LOGS="$_NTTREE/Build_Logs"
+        export _NTx86TREE="$_NTTREE"
 
         # Makefile build output directories
         export _OBJ_DIR=obj
@@ -92,6 +112,8 @@ build_nt_source() {
         echo "  _NTDRIVE     = $_NTDRIVE"
         echo "  NTMAKEENV    = $NTMAKEENV"
         echo "  TARGET       = i386 free"
+        echo "  _NTTREE      = $_NTTREE"
+        echo "  386          = $386"
         echo "  SDK_INC_PATH = $SDK_INC_PATH"
         echo "  DDK_INC_PATH = $DDK_INC_PATH"
         echo ""
@@ -129,26 +151,63 @@ build_nt_source() {
     mkdir -p dist
 
     # --- Run the build ------------------------------------------------------
-    echo "=== Running DDK build ==="
+    # Tutorial: build /cZP -M 4
+    #   /c = clean build
+    #   /Z = suppress default output (quieter)
+    #   /P = print build.exe location
+    #   -M 4 = max 4 threads (recommended)
+    echo "=== Running DDK build: build /cZP -M 4 ==="
     cd "$NT_SRC"
-    "$build_exe" -cZ 2>&1 | tee "$ROOT_DIR/build.log" || true
+    "$build_exe" /cZP -M 4 2>&1 | tee "$ROOT_DIR/build.log" || true
+
+    # Also save build.err if it was created
+    if [ -f build.err ]; then
+        cp build.err "$ROOT_DIR/build.err"
+    fi
     cd "$ROOT_DIR"
 
     echo ""
     echo "=== Build log saved to build.log ==="
+    if [ -f "$ROOT_DIR/build.err" ]; then
+        echo "=== Build errors saved to build.err ==="
+        echo "Error count: $(wc -l < "$ROOT_DIR/build.err") lines"
+    fi
 
     # --- Collect build artifacts into dist/ ----------------------------------
     echo "=== Collecting build artifacts ==="
 
+    # Primary: check binaries directory (set by razzle/buildx)
+    local binaries_dir=""
+    if [[ -n "${_NTTREE:-}" ]]; then
+        binaries_dir="${_NTTREE}"
+    fi
+
+    if [[ -n "$binaries_dir" ]] && [ -d "$binaries_dir" ]; then
+        echo "Collecting from binaries directory: $binaries_dir"
+        find "$binaries_dir" \
+            -type f \
+            \( \
+                -name "*.exe" -o \
+                -name "*.dll" -o \
+                -name "*.sys" -o \
+                -name "*.lib" \
+            \) \
+            -exec cp "{}" dist/ \; \
+            2>/dev/null || true
+    fi
+
+    # Fallback: also search the source tree for any built artifacts
+    echo "Also scanning source tree for artifacts..."
     find "$NT_SRC" \
         -type f \
         \( \
             -name "*.exe" -o \
             -name "*.dll" -o \
-            -name "*.sys" -o \
-            -name "*.lib" \
+            -name "*.sys" \
         \) \
         -not -path "*/tools/*" \
+        -not -path "*/public/*" \
+        -newer "$NT_SRC/dirs" \
         -exec cp "{}" dist/ \; \
         2>/dev/null || true
 
