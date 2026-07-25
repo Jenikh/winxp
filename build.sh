@@ -101,6 +101,22 @@ build_nt_source() {
 }
 
 # ---------------------------------------------------------------------------
+# Stub: NT source tree exists but is empty (placeholder repo)
+# ---------------------------------------------------------------------------
+build_nt_stub() {
+    echo "=== NT source tree directory exists but is empty ==="
+    echo ""
+    echo "The directory $NT_SRC/ exists but does not contain the full"
+    echo "Windows XP source tree (dirs, tools/, public/ are missing)."
+    echo ""
+    echo "This repo is a placeholder. To build, you need the actual"
+    echo "Windows XP SP1 source tree placed in $NT_SRC/."
+    echo ""
+    mkdir -p dist
+    echo "Nothing to build." > dist/README.txt
+}
+
+# ---------------------------------------------------------------------------
 # Standard build systems (Makefile / configure / CMakeLists.txt)
 # ---------------------------------------------------------------------------
 build_standard() {
@@ -130,6 +146,8 @@ build_standard() {
 # ---------------------------------------------------------------------------
 if detect_nt_source; then
     build_nt_source
+elif [ -d "$NT_SRC" ]; then
+    build_nt_stub
 else
     build_standard
 fi
