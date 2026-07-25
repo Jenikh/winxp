@@ -4,25 +4,36 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT_DIR"
 
+# ---------------------------------------------------------------------------
+# Only run on Windows (MSYS / MinGW / Cygwin)
+# ---------------------------------------------------------------------------
 case "$(uname -s)" in
     MINGW*|MSYS*|CYGWIN*)
         ;;
     *)
         echo "Windows XP sources can only be built from Windows."
+        echo "Use MSYS2, Git Bash, or a Razzle command prompt."
         exit 1
         ;;
 esac
 
+# ---------------------------------------------------------------------------
+# Detect the NT source tree
+# ---------------------------------------------------------------------------
 NT_SRC="Source/XPSP1/NT"
 
 detect_nt_source() {
     [ -f "$NT_SRC/dirs" ] && [ -d "$NT_SRC/tools" ] && [ -d "$NT_SRC/public" ]
 }
 
+# ---------------------------------------------------------------------------
+# NT build: set up razzle-style environment and invoke build.exe
+# ---------------------------------------------------------------------------
 build_nt_source() {
     echo "=== Detected Windows XP (NT 5.1) source tree ==="
     echo ""
 
+    # --- If not already in a Razzle env, set up a minimal one ---------------
     if [[ -z "${_NTROOT:-}" ]]; then
         echo "No Razzle environment detected - setting up minimal NT build env"
         echo ""
@@ -36,10 +47,12 @@ build_nt_source() {
 
         export NTMAKEENV="$NT_ABS/tools"
         export RAZZLETOOLPATH="$NT_ABS/tools"
+
         export BASEDIR="$NT_ABS"
         export _NTOBJDIR="obj"
         export _NTLIBDIR="lib"
 
+        # SDK / DDK paths
         export SDK_PATH="$NT_ABS/public/sdk"
         export SDK_INC_PATH="$SDK_PATH/inc"
         export SDK_LIB_PATH="$SDK_PATH/lib"
@@ -54,6 +67,7 @@ build_nt_source() {
         export PUBLIC_INTERNAL_PATH="$NT_ABS/public/internal"
         export WPP_CONFIG_PATH="$NT_ABS/tools/WppConfig"
 
+        # Target architecture: i386 free build
         export PROCESSOR_ARCHITECTURE=x86
         export _BUILDARCH=x86
         export BUILD_TYPE=fre
@@ -61,14 +75,17 @@ build_nt_source() {
         export NTDEBUG=ntsdnodbg
         export BUILD_ALT_DIR=""
 
+        # Makefile build output directories
         export _OBJ_DIR=obj
         export TARGET_DIRECTORY=i386
 
+        # Add DDK / SDK / tools bin to PATH
         local ddk_bin="$OAK_PATH/binr"
         [ -d "$ddk_bin" ] && export PATH="$ddk_bin:$PATH"
         local sdk_bin="$SDK_PATH/bin"
         [ -d "$sdk_bin" ] && export PATH="$sdk_bin:$PATH"
         [ -d "$NT_ABS/tools" ] && export PATH="$NT_ABS/tools:$PATH"
+        # Add tools/x86 helper tools to PATH
         [ -d "$NT_ABS/tools/x86" ] && export PATH="$NT_ABS/tools/x86:$PATH"
 
         echo "  _NTROOT      = $_NTROOT"
@@ -85,6 +102,7 @@ build_nt_source() {
         echo ""
     fi
 
+    # --- Locate build.exe ---------------------------------------------------
     local build_exe=""
     if command -v build &>/dev/null; then
         build_exe="build"
@@ -95,10 +113,12 @@ build_nt_source() {
     fi
 
     if [[ -z "$build_exe" ]]; then
-        echo "ERROR: build.exe not found on PATH or in $NT_SRC/tools."
+        echo "ERROR: 'build.exe' not found on PATH or in $NT_SRC/tools."
         echo ""
         echo "The NT build system requires build.exe from the Windows DDK/WDK."
-        echo "Set PATH to include the DDK bin directory."
+        echo "This tool is not included in the source tree."
+        echo "Set PATH to include the DDK bin directory, or place build.exe"
+        echo "in $NT_SRC/tools/."
         exit 1
     fi
 
@@ -108,6 +128,7 @@ build_nt_source() {
     mkdir -p build
     mkdir -p dist
 
+    # --- Run the build ------------------------------------------------------
     echo "=== Running DDK build ==="
     cd "$NT_SRC"
     "$build_exe" -cZ 2>&1 | tee "$ROOT_DIR/build.log" || true
@@ -116,14 +137,29 @@ build_nt_source() {
     echo ""
     echo "=== Build log saved to build.log ==="
 
+    # --- Collect build artifacts into dist/ ----------------------------------
     echo "=== Collecting build artifacts ==="
-    find "$NT_SRC" -type f \( -name "*.exe" -o -name "*.dll" -o -name "*.sys" -o -name "*.lib" \) -not -path "*/tools/*" -exec cp "{}" dist/ \; 2>/dev/null || true
+
+    find "$NT_SRC" \
+        -type f \
+        \( \
+            -name "*.exe" -o \
+            -name "*.dll" -o \
+            -name "*.sys" -o \
+            -name "*.lib" \
+        \) \
+        -not -path "*/tools/*" \
+        -exec cp "{}" dist/ \; \
+        2>/dev/null || true
 
     local count
     count=$(find dist -maxdepth 1 -type f 2>/dev/null | wc -l)
     echo "Copied $count build artifact(s) into dist/"
 }
 
+# ---------------------------------------------------------------------------
+# Standard build systems (Makefile / configure / CMakeLists.txt)
+# ---------------------------------------------------------------------------
 build_standard() {
     echo "=== No NT source tree detected - trying standard build systems ==="
     mkdir -p build
@@ -138,6 +174,7 @@ build_standard() {
         cmake --build build --parallel
     else
         echo "No supported build system detected."
+        echo "Expected one of: Makefile, configure, CMakeLists.txt, or an NT source tree."
         exit 1
     fi
 
@@ -145,6 +182,9 @@ build_standard() {
     cp -r build/* dist/ 2>/dev/null || true
 }
 
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
 if detect_nt_source; then
     build_nt_source
 else
