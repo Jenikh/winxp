@@ -26,17 +26,18 @@ jobs:
       - name: Build
         shell: bash
         run: |
-          dos2unix build.sh 2>/dev/null || true
           chmod +x build.sh
-          bash -x build.sh 2>&1 || true
+          ./build.sh
 
       - name: Package build
+        if: success()
         shell: bash
         run: |
           mkdir -p dist
           tar -czf winxp-build.tar.gz dist
 
       - name: Create Release
+        if: success()
         uses: softprops/action-gh-release@v2
         with:
           tag_name: build-${{ github.run_number }}
